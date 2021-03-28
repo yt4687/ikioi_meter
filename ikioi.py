@@ -12,7 +12,7 @@ app.config['JSON_SORT_KEYS'] = False # JSONをソートしない
 api = Api(app)
 
 # SQLへの接続情報
-connection = MySQLdb.connect(host = '127.0.0.1', user = 'username', passwd = 'password', db = 'database', charset = 'utf8mb4')
+connection = MySQLdb.connect(host = 'localhost', user = 'username', passwd = 'password', db = 'database', charset = 'utf8mb4')
 cursor = connection.cursor(DictCursor)
 
 class Hello(Resource):
@@ -25,20 +25,36 @@ class Hello(Resource):
         # 処理分岐(現状はまったく意味がない)
         # もともと複数の処理を同時に実装するつもりだったころの名残、もったいないので残してある
         if not args["jkch"] in ikioi_data.jikkyo_id_table:
-            abort(401, message={"jkch": "jkch cannot be blank!"})
+            #abort(401, message={"jkch": "jkch cannot be blank!"})
+            jsonres = jsonify({'meta':{'status':401, 'massage': 'Parameter Error'}})
+            jsonres.status_code = 401
+            return jsonres
 
         if args["jkch"] == 'all':
-            # GroupCDの呼び出し
-            cursor.execute('SELECT * FROM ikioi order by No desc;')
-            sqldata = cursor.fetchone()
-            # 呼び出したGroupCDをもとに同一グループのデータを取り出す
-            cursor.execute('SELECT * FROM ikioi WHERE GroupCD="'+ str(sqldata["GroupCD"]) +'";')
-            sqldata = cursor.fetchall()
-            #print(sqldata)
+            try:
+                # GroupCDの呼び出し         
+                cursor.execute('SELECT * FROM ikioi order by date desc;')
+                sqldata = cursor.fetchone()  
+                #print(sqldata)
+                # 呼び出したGroupCDをもとに同一グループのデータを取り出す
+                sql2 = 'SELECT * FROM ikioi WHERE GroupCD="'+ str(sqldata["GroupCD"]) +'";'
+                cursor.execute(sql2)
+                sqldata = cursor.fetchall()
+                connection.commit()
+            except MySQLdb.Error as e:
+                print('MySQLdb.Error: ', e)
+                jsonres = jsonify({'meta':{'status':503, 'massage': 'Database Maintenance'}})
+                jsonres.status_code = 503
+                return jsonres
+                #return jsonify(jsonres, 503)
+                #return Response(response=json.dumps(jsonres), status=503)
+
+            #connection.close()
+            #print(sqldata)        
         
             # 配列をセット
             jsonr = {}
-
+            
             for elem in sqldata:
                 # 勢いの文字をセット
                 if elem['comment_ikioi'] >999:
@@ -57,14 +73,16 @@ class Hello(Resource):
                     jsondata = { "status": elem["LiveStatus"]}
                 else:
                     jsondata = { "status": elem["LiveStatus"],"live_id": elem["LiveID"], "total_watch": elem["Watchcount"], "total_comment": elem["Commentcount"], "ikioi_count": elem["comment_ikioi"], "ikioi_status": ikioi, "update_interval": elem["interbal"]}
-                temp = {elem["JKChannel"]:jsondata}
+                jesonhead = elem["JKChannel"]
+                temp = {jesonhead:jsondata}
+
                 # 生成したjsonデータを蓄える
                 jsonr.update(temp)
         
-        # 最終的なjsonデータを生成
-        jsonbody = {'meta':{'status':200},'data': jsonr}
+            # 最終的なjsonデータを生成
+            jsonbody = {'meta':{'status':200, 'massage': 'Success'},'data': jsonr}
          
-        return jsonify(jsonbody)
+            return jsonify(jsonbody)
         
 api.add_resource(Hello, "/")
 
